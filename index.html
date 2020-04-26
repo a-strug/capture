@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style type="text/css">
+      .hidden{display: none;}
+    </style>
+  </head>
+  <body onload="init();">
+    <div>
+      <h3>Capture</h3>
+      <canvas class="_hidden" id="capture" width="400" height="300"></canvas>
+    </div>
+    <div>
+      <h3>Stream</h3>
+      <video class="_hidden" id="stream" width="400" height="300"></video>
+    </div>
+  </body>
+
+  <script>
+    // for old browsers
+    if (navigator.mediaDevices === undefined) {
+      navigator.mediaDevices = {};
+    }
+
+    if (navigator.mediaDevices.getUserMedia === undefined) {
+      navigator.mediaDevices.getUserMedia = function(constraints) {
+        var getUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+
+        if (!getUserMedia) {
+          return Promise.reject(new Error('getUserMedia is not implemented in this browser'));
+        }
+
+        return new Promise(function(resolve, reject) {
+          getUserMedia.call(navigator, constraints, resolve, reject);
+        });
+      }
+    }
+
+    function init() {
+      var captureOpts = {
+        requestUrl: '/upload/url',
+        minInterval: 1000, // 1 sec
+        maxInterval: 5000, // 10 sec
+        userIdentity: 'XXXXXXX', // User ID, Email etc.
+      }
+
+      streamCapture = new StreamCapture(captureOpts);
+      streamCapture.startStreaming();
+      streamCapture.loop();
+    }
+
+    var StreamCapture = function(opts) {
+      var cameraStream = null;
+      var capture = document.getElementById("capture");
+      var stream = document.getElementById("stream");
+      var opts = opts || {};
+
+      function startStreaming() {
+        var mediaSupport = 'mediaDevices' in navigator;
+
+        if(mediaSupport && null == cameraStream) {
+          navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          .then(function(mediaStream) {
+            cameraStream = mediaStream;
+            stream.srcObject = mediaStream;
+            stream.play();
+          })
+          .catch(function(err) {
+            console.log("Unable to access camera: " + err);
+          });
+        }
+        else {
+          console.log('Your browser does not support media devices.');
+          return;
+        }
+      }
+
+      function captureSnapshot() {
+        if(null != cameraStream) {
+          var ctx = capture.getContext('2d');
+          ctx.drawImage(stream, 0, 0, capture.width, capture.height);
+          sendImage(capture.toDataURL("image/png"));
+        }
+      }
+
+      function dataURItoBlob(dataURI) {
+        var byteString = atob(dataURI.split(',')[1]);
+        var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+        
+        var buffer  = new ArrayBuffer(byteString.length);
+        var data  = new DataView(buffer);
+        
+        for(var i = 0; i < byteString.length; i++) {
+          data.setUint8(i , byteString.charCodeAt(i));
+        }
+        
+        return new Blob([buffer], { type: mimeString });
+      }
+
+      function sendImage(dataURI) {
+        var request = new XMLHttpRequest();
+        request.open("POST", opts.requestUrl, true);
+
+        var data = new FormData();
+        var imageData = dataURItoBlob(dataURI);
+
+        data.append("image", imageData, "myimage");
+        data.append("userIdentity", opts.userIdentity);
+
+        // request.send(data);
+      }
+
+      function loop() {
+        var rand = Math.round(Math.random() * (opts.maxInterval - opts.minInterval)) + opts.minInterval;
+        setTimeout(function() {
+          captureSnapshot();
+          loop(); 
+        }, rand);        
+      }
+
+      return {
+        loop: loop,
+        startStreaming: startStreaming
+      }      
+    }
+
+  </script>
+</html>
